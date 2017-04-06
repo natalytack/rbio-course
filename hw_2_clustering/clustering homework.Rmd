@@ -1,0 +1,133 @@
+---
+title: "Clustering_homework"
+author: "Zorina Natasha"
+date: "April 4, 2017"
+output: html_document
+---
+### Используемые библиотеки:
+```{r setup, message=FALSE}
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+library(amap)
+library(dbscan)
+options(width=120)
+```
+
+
+### Данные:
+```{r load}
+
+counts <- read.csv("GSE89225_Illumina_counts.csv", row.names=1)
+conditions <- read.csv("conditions.csv", row.names=1)
+mart <- read.table("human_mart.txt", sep="\t", header=1, check.names = F)
+
+```
+
+
+### Задание 1: иерархическая кластеризация
+```{r clast}
+
+dds <- DESeqDataSetFromMatrix(countData = counts,
+                              colData = conditions,
+                              design = ~ tissue + cells) # Создадим DeseqDataSet объект
+
+max_8000 <- names(rev(sort(rowSums(counts(dds))))[1:8000]) # названия 8000 сильно экспрессированых генов
+dds_new <- dds[rownames(dds) %in% max_8000,] # оставляем только эти 8000 сильно эспрессированных генов
+dds_log <- rlog(dds_new) # логарифмированные значения экспрессии
+dds_cor <- cor(assay(dds_log)) # считаем корреляции между образцами используя cor (результатом будет матрица размера m×m, где m – количество образцов)
+dds_nes <- 1 - dds_cor # считаем матрицу “непохожести” 1 - cor
+dds_dist <- dist(dds_nes) # объект для этой матрицы
+
+dds_clust_1 <- hclust(dds_dist, method="average") # кластеризаця, метода “связывания” объектов в группы: average
+dds_clust_2 <- hclust(dds_dist, method="complete") # кластеризаця, метода “связывания” объектов в группы: complete
+dds_clust_3 <- hclust(dds_dist, method="single") # кластеризаця, метода “связывания” объектов в группы: single
+
+plot_1 <- plot(dds_clust_1)
+plot_2 <- plot(dds_clust_2)
+plot_3 <- plot(dds_clust_3)
+
+
+
+
+
+```
+
+### Задание 2: K-means
+```{r k - means}
+
+counts <- counts[,names(counts) != "treg_NBP_patient3"] # убираем аутлаера
+conditions <- conditions[row.names(conditions) != "treg_NBP_patient3", ] # убиарем аутлаера
+
+dds_wo_out <- DESeqDataSetFromMatrix(countData = counts,
+                              colData = conditions,
+                              design = ~ tissue + cells) # Создадим DeseqDataSet объект
+
+max_8000_wo <- names(rev(sort(rowSums(counts(dds_wo_out))))[1:8000]) # названия 8000 сильно экспрессированых генов
+
+dds_new_wo <- dds_wo_out[rownames(dds_wo_out) %in% max_8000_wo,] # оставляем только эти 8000 сильно эспрессированных генов
+
+dds_log_wo <- rlog(dds_new_wo) # логарифмированные значения экспрессии
+
+clustering <- Kmeans(assay(dds_log_wo), 6, method="correlation", iter.max=20000) # Используем функцию Kmeans из пакета amap с методом “correlation”, c количеством кластеров равным 6 и максимальным количеством итераций равным 20000
+head(clustering$cluster)
+
+```
+
+### Heatmap
+```{r heatmap}
+
+
+# conditions[, 1] # ткани
+# conditions[, 2] # клетки
+
+dds_log_wo_a <- assay(dds_log_wo)
+sort_clust <- sort(clustering$cluster)
+to_visualise <- dds_log_wo_a[names(sort_clust),
+                            order(conditions[, 2],conditions[, 1])] 
+
+to_visualise <- t(apply(to_visualise, 1, function(r) {
+  (r - min(r)) / (max(r) - min(r))
+}))
+
+m <- as.data.frame(sort_clust)
+m$sort_clust <- as.factor(m$sort_clust)
+
+
+pheatmap(to_visualise, 
+         show_rownames =F, cluster_rows = F,
+         cluster_cols=F,
+         annotation_col = conditions, annotation_row = m)
+
+
+```
+
+### Density based algortihms
+```{r Density based algortihms}
+
+project <- read.csv("projection.csv", row.names=1)
+
+# до кластеризации 
+
+ggplot(project, aes(TSNE.1, TSNE.2)) +
+  geom_point() 
+
+
+# после кластеризации
+?dbscan
+
+res <- dbscan(project, eps = 3, minPts = 3)
+cluster <- factor(res$cluster)
+
+ggplot(project,aes(TSNE.1, TSNE.2))+
+  geom_point(aes(color = cluster))
+
+
+
+
+
+
+```
+
+
+
