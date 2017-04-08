@@ -1,0 +1,133 @@
+---
+title: "кр"
+author: "Zorina Natasha"
+date: "April 8, 2017"
+output: html_document
+---
+
+```{r setup, message=FALSE}
+library(DESeq2)
+library(ggplot2)
+library(clusterProfiler)
+library(pheatmap)
+library(amap)
+library(dbscan)
+library(dplyr)
+options(width=120)
+```
+
+### Данные:
+```{r load}
+
+counts <- read.csv("GSE89633_counts.tsv", row.names=1, sep="\t")
+conditions <- read.csv("GSE89633_conditions.tsv", row.names=1, sep="\t")
+```
+
+```{r deseq_prep, cache=TRUE, message=FALSE}
+dds <- DESeqDataSetFromMatrix(countData = counts,
+                              colData = conditions,
+                              design = ~ conditions + cells)
+dds <- DESeq(dds)
+vst_dds <- vst(dds)
+counts.norm <- assay(vst_dds)
+
+plotPCA(vst_dds, intgroup=c("conditions", "cells")) + theme_bw()
+```
+
+
+
+```{r clast}
+
+max_8000 <- names(rev(sort(rowSums(counts(dds))))[1:8000]) # названия 8000 сильно экспрессированых генов
+dds_new <- dds[rownames(dds) %in% max_8000,] # оставляем только эти 8000 сильно эспрессированных генов
+
+dds_new_log <- rlog(dds_new)
+dds_new_log_a <- assay(dds_new_log)
+clustering <- Kmeans(dds_new_log_a, 6, method="correlation", iter.max=20000)
+```
+
+
+
+```{r heatmap}
+
+
+conditions[, 1] #
+conditions[, 2] # 
+
+
+sort_clust <- sort(clustering$cluster)
+to_visualise <- dds_new_log_a[names(sort_clust),
+                            order(conditions[, 2],conditions[, 1])] 
+
+to_visualise <- t(apply(to_visualise, 1, function(r) {
+  (r - min(r)) / (max(r) - min(r))
+}))
+
+m <- as.data.frame(sort_clust)
+m$sort_clust <- as.factor(m$sort_clust)
+
+
+pheatmap(to_visualise, 
+         show_rownames =F, cluster_rows = F,
+         cluster_cols=F,
+         annotation_col = conditions, annotation_row = m)
+
+
+```
+
+
+1 вопрос: Явных аутлаеров не вижу.
+2 вопрос: нет (?)
+
+
+```{r volcano_plot}
+
+FB_set <- conditions[conditions$cells == "cell type: FB",]
+counts_FB <- counts[,rownames(FB_set)]
+dds_FB <- DESeqDataSetFromMatrix(countData = counts_FB,
+                              colData = FB_set,
+                              design = ~ conditions)
+dim(counts_FB)
+
+dds_FB <- DESeq(dds_FB)
+res_FB <- results(dds_FB)
+data_FB <- data.frame(
+  x=res_FB$log2FoldChange,
+  y=-log10(res_FB$padj),
+  grid = 0)
+
+
+FAP_set <- conditions[conditions$cells == "cell type: FAP",]
+counts_FAP <- counts[,rownames(FAP_set)]
+dds_FAP <- DESeqDataSetFromMatrix(countData = counts_FAP,
+                              colData = FAP_set,
+                              design = ~ conditions)
+dds_FAP <- DESeq(dds_FAP)
+res_FAP <- results(dds_FAP)
+data_FAP <- data.frame(
+  x=res_FAP$log2FoldChange,
+  y=-log10(res_FAP$padj),
+  grid = 1)
+
+SMP_set <- conditions[conditions$cells == "cell type: SMP",]
+counts_SMP <- counts[,rownames(SMP_set)]
+dds_SMP <- DESeqDataSetFromMatrix(countData = counts_SMP,
+                              colData = SMP_set,
+                              design = ~ conditions)
+dds_SMP <- DESeq(dds_SMP)
+res_SMP <- results(dds_SMP)
+data_SMP <- data.frame(
+  x=res_SMP$log2FoldChange,
+  y=-log10(res_SMP$padj),
+  grid = 2)
+
+
+data_all <- rbind(data_FB,data_FAP,data_SMP)
+
+
+ggplot(data_all, aes(x=x, y=y))+
+  geom_point(size=1) + theme_bw() +
+  xlab("Log fold change") +
+  ylab("Adjusted p.value") + 
+    facet_grid(.~grid)
+```
