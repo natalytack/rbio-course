@@ -17,7 +17,7 @@ library(DBI)
 * Создадим наши таблицы
 * Disconnect
 
-```{r setup, warning=FALSE, message=F, cache=TRUE}
+```{r setup, warning=FALSE, message=F}
 
 # создание базы данных
 
@@ -26,21 +26,21 @@ dbListTables(mydb)# таблица
 ```
 
 ### 1. Перечислить пользователей в алфавитном порядке username (все колонки в любом порядке)
-```{r1}
+```{r 1}
 
 users <- dbGetQuery(mydb, "SELECT * FROM  Users ORDER BY username;")
 users
 ```
 
 ### 2. 5 пользователей, которые зарегистрировались последними (все колонки в любом порядке)
-```{r2}
+```{r 2}
 
 last_users <- dbGetQuery(mydb, "SELECT * FROM  Users ORDER BY registered DESC LIMIT 5;")
 last_users
 ```
 
 ### 3. Топ 5 пользователей по числу прослушиваний (все колонки в любом порядке)
-```{r3}
+```{r 3}
 
 top_users <- dbGetQuery(mydb, "SELECT * FROM Listened 
                         GROUP BY user_id 
@@ -51,7 +51,7 @@ top_users
 ```
 
 ### 4. Информацию об исполнителях и количестве их альбомов (имя исполнителя|число)
-```{r4}
+```{r 4}
 
 alb <- dbGetQuery(mydb, "SELECT Artists.name as Artists, 
                   count(Albums.id) as Albums 
@@ -63,7 +63,7 @@ alb
 ```
 
 ### 5. Информацию об исполнителях и количестве их песен (имя исполнителя|число)
-```{r5}
+```{r 5}
 
 songs <- dbGetQuery(mydb, "SELECT Artists.name as Artists, 
                     count(Songs.id) as Songs_count
@@ -79,7 +79,7 @@ songs
 ```
 
 ### 6. Самый длинный альбом по числу песен. (имя исполнителя|название альбома|число)
-```{r6}
+```{r 6}
 
 long_songs_album <- dbGetQuery(mydb, "SELECT Artists.name as Artist,
                                Albums.name as Album,
@@ -96,7 +96,7 @@ long_songs_album
 ```
 
 ### 7. Самый длинный альбом по суммарной продолжительности. (имя исполнителя|название альбома|число)
-```{r7}
+```{r 7}
 
 long_alb <- dbGetQuery(mydb, "SELECT Artists.name as Artist, 
                       Albums.name as Album, 
@@ -112,7 +112,7 @@ long_alb
 ```
 
 ### 8. Альбом самой большой средней продолжительностью трека. (имя исполнителя|название альбома|число)
-```{r8}
+```{r 8}
 
 mean_tr <- dbGetQuery(mydb, "SELECT Artists.name as Artist,
                       Albums.name as Album, 
@@ -128,7 +128,7 @@ mean_tr
 ```
 
 ### 9. Топ 5 самых прослушиваемых треков. (имя исполнителя|название альбома|название песни|число)
-```{r9}
+```{r 9}
 
 top_5 <- dbGetQuery(mydb, "SELECT Artists.name as Artists, 
                    Albums.name as Albums, 
@@ -148,7 +148,7 @@ top_5
 ```
 
 ### 10. Найдите год, что песни, выпущенные в этом году, слушают больше всего (год|количество прослушиваний)
-```{r10}
+```{r 10}
 
 year_song <- dbGetQuery(mydb, "SELECT Albums.release_year as Year,
                         count(Listened.song_id) as Top_count
@@ -165,7 +165,7 @@ year_song
 ```
 
 ### 11. Для пользователя с id=47 найдите топ 20 последних прослушанных треков. (имя исполнителя|название альбома|название песни|когда)
-```{r11}
+```{r 11}
 
 top_20 <- dbGetQuery(mydb, "SELECT Artists.name as Artist,
                     Albums.name as Album,
@@ -185,7 +185,7 @@ top_20
 ```
 
 ### 12. (Больше join Богу join) Для каждого пользователя и каждой песни, которую пользователь прослушал, найдите количество прослушиваний. (имя пользователя|имя исполнителя|название альбома|название песни|число) . Подсказка – можно использовать пару колонок в group by.
-```{r12}
+```{r 12}
 
 us_song <- dbGetQuery(mydb, "SELECT Users.username as Users,
                       Artists.name as Artists,
@@ -199,7 +199,7 @@ us_song <- dbGetQuery(mydb, "SELECT Users.username as Users,
                       JOIN Users ON Users.id = Listened.user_id
                       GROUP BY Users, Songs")
 
-us_song
+head(us_song)
 
 
 dbDisconnect(mydb)
