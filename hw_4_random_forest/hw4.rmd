@@ -1,0 +1,218 @@
+---
+title: "hw4"
+author: "Zorina Natasha"
+date: "May 20, 2017"
+output: html_document
+---
+
+```{r warning=F, message=F}
+library(randomForest)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+library(ggplot2)
+library(parallel)
+options(width = 120)
+```
+
+# Loading data
+```{r}
+ages <- read.table("ages.tsv", sep="\t", header=1)
+head(ages)
+
+methylation <- read.table("methylation.tsv", sep="\t", header=1, row.names = 1, na.strings = "NA")
+```
+
+# Pre-processing
+```{r}
+methylation[,4:ncol(methylation)] <- sapply(methylation[,4:ncol(methylation)], function(x) ifelse(is.na(x), 0, x))
+head(methylation)
+
+methylation$Age_corr <- apply(methylation[,4:ncol(methylation)], 1, function(x) cor.test(x, ages$Age)$estimate)
+
+methylation <- methylation[order(abs(methylation$Age_corr),decreasing = T)[1:10], ]
+```
+
+# Pre-processing
+```{r}
+set.seed(123456)
+training <- sample(1:50, 40)
+validation <- (1:50)[-training]
+training <- training + 3
+validation <- validation + 3
+
+train <- as.data.frame(t(methylation[,  training]))
+valid <- as.data.frame(t(methylation[, validation]))
+
+train_response <- unlist(lapply(rownames(train), function(x) ages$Age[which(ages$Sample == x)]))
+valid_response <- unlist(lapply(rownames(valid), function(x) ages$Age[which(ages$Sample == x)]))
+  
+```
+
+```{r wrapper-function}
+#' randomForest wrapper and error estimator
+#'
+#' @param train.data data.frame, training dataset
+# @param train.response numeric vector, values of dependent variables in training dataset
+#' @param test.data data.frame, testing (validation) dataset
+# @param test.response numeric vector, values of dependent variables in testing dataset
+#' @param runs.number numeric (integer), how many times we should run random forest
+#' @param ... parameters that are passes to randomForest function, like
+#'        ntree, mtry, nodesize, replace, sampsize
+#'
+#' @return numeric vector with two values, 
+#'      first is mean of RMSE values on training data
+#'      second is mean of RMSE values on testing data
+#' @export
+#'
+#' @examples
+wrapper <- function(train.data, train.response,
+                    test.data, test.response, 
+                    runs.number=50, ...) {
+  RMSE <- function(fit, data){
+  sqrt(sum((data$response - predict(fit, data))^2) / length(data$response))
+  }
+  train.data$response <- train.response
+  test.data$response <- test.response
+  fitt <- mclapply(1:runs.number, function(x) randomForest(response ~ .,
+                       data=train.data, ... ), mc.cores = 2)
+  t <- mean(unlist(mclapply(fitt, function(x) RMSE(x, train.data), mc.cores = 2)))
+  v <- mean(unlist(mclapply(fitt, function(x) RMSE(x, test.data), mc.cores = 2)))
+  c(t, v)
+}
+```
+
+# Optimisation
+## Ntree
+```{r ntree}
+ntree <- data.frame(matrix(unlist((lapply(seq(1, 1000, 5), function(x) c(x, wrapper(train, train_response, valid, valid_response, ntree=x))))),ncol = 3, byrow=T))
+tr <- ntree[, 1:2]
+colnames(tr) <- c("Ntree", "RMSE")
+val <- ntree[, c(1,3)]
+colnames(val) <- c("Ntree", "RMSE")
+tr$dataset <- "Train"
+val$dataset <- "Validation"
+ntree <- rbind(tr, val)
+ggplot(ntree, aes(Ntree, RMSE, col=dataset))+
+  geom_line()
+
+```
+
+ntree=100
+
+# REPLACE and SAMPSIZE
+1. График зависимости ошибки от sampsize (1:40) при replace=F
+```{r}
+ssize <- data.frame(matrix(unlist((lapply(1:40, function(x) c(x, wrapper(train, train_response, valid, valid_response, ntree=100, mtry=10, nodesize=1, sampsize=x, replace=F))))),ncol = 3, byrow=T))
+tr <- ssize[, 1:2]
+colnames(tr) <- c("Sampsize", "RMSE")
+val <- ssize[, c(1,3)]
+colnames(val) <- c("Sampsize", "RMSE")
+tr$dataset <- "Train"
+val$dataset <- "Validation"
+ssize <- rbind(tr, val)
+ggplot(ssize, aes(Sampsize, RMSE, col=dataset))+
+  geom_line()
+```
+
+2. График зависимости ошибки от sampsize (1:40) при replace=T
+```{r}
+ssize <- data.frame(matrix(unlist((lapply(1:40, function(x) c(x, wrapper(train, train_response, valid, valid_response, ntree=100, mtry=10, nodesize=1, sampsize=x, replace=T))))),ncol = 3, byrow=T))
+tr <- ssize[, 1:2]
+colnames(tr) <- c("Sampsize", "RMSE")
+val <- ssize[, c(1,3)]
+colnames(val) <- c("Sampsize", "RMSE")
+tr$dataset <- "Train"
+val$dataset <- "Validation"
+ssize <- rbind(tr, val)
+ggplot(ssize, aes(Sampsize, RMSE, col=dataset))+
+  geom_line()
+```
+
+Переобучается больше всего при replace=F. Оптимальные параметры:
+
+replace=T
+sampsize=10
+
+# NODESIZE
+
+```{r}
+nsize <- data.frame(matrix(unlist((lapply(1:40, function(x) c(x, wrapper(train, train_response, valid, valid_response, ntree=100, mtry=10, nodesize=x, sampsize=10, replace=T))))),ncol = 3, byrow=T))
+tr <- nsize[, 1:2]
+colnames(tr) <- c("Nodesize", "RMSE")
+val <- nsize[, c(1,3)]
+colnames(val) <- c("Nodesize", "RMSE")
+tr$dataset <- "Train"
+val$dataset <- "Validation"
+nsize <- rbind(tr, val)
+ggplot(nsize, aes(Nodesize, RMSE, col=dataset))+
+  geom_line()
+```
+
+Сложно сказать про переобучение. По обоим выборкам ошибка уменьшается.
+
+nodesize=3
+
+# MTRY
+
+```{r}
+mtry <- data.frame(matrix(unlist((lapply(1:10, function(x) c(x, wrapper(train, train_response, valid, valid_response, ntree=100, mtry=x, nodesize=3, sampsize=10, replace=T))))),ncol = 3, byrow=T))
+tr <- mtry[, 1:2]
+colnames(tr) <- c("MTRY", "RMSE")
+val <- mtry[, c(1,3)]
+colnames(val) <- c("MTRY", "RMSE")
+tr$dataset <- "Train"
+val$dataset <- "Validation"
+mtry <- rbind(tr, val)
+ggplot(mtry, aes(MTRY, RMSE, col=dataset))+
+  geom_line()
+```
+
+Не видно переобучение.
+
+mtry=5
+
+# CROSS VALIDATION
+## Default RandomForest 
+```{r}
+cross.validation <- matrix(sample(1:50, 50), nrow=5, ncol=10)
+data <- rbind(train, valid)
+response <- c(train_response, valid_response)
+cross.results <- apply(cross.validation, 1, function(test.sample){
+  # using each part as testing dataset
+  # using rest of the dataset as training dataset
+  train.sample <- (1:50)[-test.sample]
+  train.data <- data[train.sample, ]
+  train.response <- response[train.sample]
+  test.data <- data[test.sample, ]
+  test.response <- response[test.sample]
+  
+  # calculating RMSE for every part and default random forest
+  return(wrapper(train.data, train.response, test.data, test.response, 100))
+})
+print(rowMeans(cross.results))
+```
+
+## Supercool RandomForest 
+```{r}
+cross.results <- apply(cross.validation, 1, function(test.sample){
+  # using each part as testing dataset
+  # using rest of the dataset as training dataset
+  train.sample <- (1:50)[-test.sample]
+  train.data <- data[train.sample, ]
+  train.response <- response[train.sample]
+  test.data <- data[test.sample, ]
+  test.response <- response[test.sample]
+  
+  # calculating RMSE for every part and default random forest
+  return(wrapper(train.data, train.response, test.data, test.response, runs.number=100, ntree=100, mtry=5, nodesize=3, sampsize=10, replace=T))
+})
+
+print(rowMeans(cross.results))
+```
+
+# Невероятный успех :)
+
+
+
